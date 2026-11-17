@@ -258,9 +258,10 @@ ramdisk_max_bytes = 199229440
 ["os_overrides"."macos-27.3-26C5035r"."payload"."adt"]
 # T6050, the chip of Mac17,11.
 "chip_id" = "6050"
-# The 6 GiB bootstrap window spans the high bank. DarwinBoot lists the holes
-# and firmware reservations so XNU skips them when creating VM pages.
-"owned_memory_size" = "0x180000000"
+# The qualified 218FDCCE firmware has no ShengBootMemoryDxe expansion, so a 6 GiB window
+# spans a DRAM hole and DarwinBoot's span fill dies with a synchronous external abort.
+# 2 GiB stays inside one free run on this firmware and still boots the kernel and userland.
+"owned_memory_size" = "0x80000000"
 "owned_memory_excluded_ranges" = 64
 # DarwinBoot records where the payload RAM disk and the entry's initrd buffer lie in the firmware's memory map
 # (sysctl kern.boot_payload_memory).
