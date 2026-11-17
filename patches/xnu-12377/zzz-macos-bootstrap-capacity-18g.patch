@@ -1,0 +1,17 @@
+--- a/osfmk/arm/pmap/pmap.h	2026-11-18 06:19:56.559496457 +0800
++++ b/osfmk/arm/pmap/pmap.h	2026-11-18 06:19:56.559561400 +0800
+@@ -116,10 +116,11 @@
+  */
+ #define BOOTSTRAP_TABLE_SIZE (ARM_PGBYTES * 34)
+ #elif !defined(APPLE_ARM64_ARCH_FAMILY) && !__ARM_16K_PG__
+-/* Native 4 KiB: two roots plus up to seven L2 pages per 6 GiB mapping.
+- * The physical and virtual bases may each straddle an extra 1 GiB region.
++/* Native 4 KiB: two roots, one L2 page per GiB of span for the physical and for the
++ * virtual mapping, and one extra region where a base straddles a GiB boundary.
++ * 40 pages cover a managed span of about 18 GiB.
+  */
+-#define BOOTSTRAP_TABLE_SIZE (ARM_PGBYTES * 16)
++#define BOOTSTRAP_TABLE_SIZE (ARM_PGBYTES * 40)
+ #else /* defined(ARM_LARGE_MEMORY) */
+ #define BOOTSTRAP_TABLE_SIZE (ARM_PGBYTES * 8)
+ #endif /* defined(ARM_LARGE_MEMORY) */
