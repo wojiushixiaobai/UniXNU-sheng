@@ -10,7 +10,7 @@ permissions:
   contents: read
 
 concurrency:
-  group: firmware-diag-${{ github.ref }}
+  group: firmware-diag-${{ github.run_id }}
   cancel-in-progress: false
 
 jobs:
@@ -93,6 +93,35 @@ jobs:
             --fd ../uefi-sheng/Build/shengPkg/DEBUG_CLANGPDB/FV/SILICIUM_UEFI.fd \
             --template-dir out/downloads \
             --loader-guid 1b64af87-8415-4b57-9b16-680d70913b9f
+      - name: Cross-check the section with the xz tool
+        if: always()
+        continue-on-error: true
+        run: |
+          python3 - <<'PY'
+          import pathlib, struct, uuid
+          path = pathlib.Path('uefi-sheng/Build/shengPkg/DEBUG_CLANGPDB/FV/SILICIUM_UEFI.fd')
+          if not path.is_file():
+              print('no firmware volume'); raise SystemExit(0)
+          fd = path.read_bytes()
+          size24 = lambda data, offset: int.from_bytes(data[offset:offset + 3], 'little')
+          align = lambda value, boundary: (value + boundary - 1) & -boundary
+          length = struct.unpack_from('<Q', fd, 32)[0]
+          header = struct.unpack_from('<H', fd, 48)[0]
+          at = header
+          while at + 24 <= length and fd[at:at + 24] != b'\xff' * 24:
+              size = size24(fd, at + 20)
+              if fd[at + 18] == 0x0b:
+                  section = fd[at + 24:at + size]
+                  if section[3] == 2 and str(uuid.UUID(bytes_le=section[4:20])) == 'ee4e5898-3914-4259-9d6e-dc7bd79403cf':
+                      data_at = struct.unpack_from('<H', section, 20)[0]
+                      stream = section[data_at:size24(section, 0)]
+                      pathlib.Path('/tmp/section.lzma').write_bytes(stream)
+                      print(f'section written {len(stream)} head {stream[:13].hex()}')
+                      break
+              at = align(at + size, 8)
+          PY
+          xz --format=lzma -dc /tmp/section.lzma | wc -c
+          echo "xz rc=$?"
       - name: Upload firmware diagnostics
         if: always()
         uses: actions/upload-artifact@v4

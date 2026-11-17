@@ -1,13 +1,11 @@
-"""Diagnose the compressed firmware volume that the macOS boot image build consumes.
+"""Inspect the compressed firmware section of the qualified boot template pipeline.
 
-Prints the environment, then replays boot_template's stages one by one so a failure can be
-attributed to the built firmware volume, the pinned template, or the LZMA round trip.
-
-usage: python3 analyze-firmware-volume.py --fd <SILICIUM_UEFI.fd> \
+usage: python3 analyze_firmware_volume.py --fd <SILICIUM_UEFI.fd> \
            [--template-dir out/downloads] [--loader-guid GUID]
 """
 import argparse
 import ctypes
+import ctypes.util
 import hashlib
 import lzma
 import pathlib
@@ -54,7 +52,6 @@ def fv_files(data, offset=0):
 
 
 def find_stream(firmware):
-    """Return (guid, data_at, section) of the first guided section that names the LZMA GUID."""
     _, _, files = fv_files(firmware)
     for at, guid, kind, size in files:
         if kind != 0x0b:
@@ -81,7 +78,6 @@ def decode_lzma(stream, label):
 
 
 def probe_roundtrip():
-    """Replay replace_loader's recompress + size patch + re-decode in this environment."""
     payload = bytes(range(256)) * 4000
     packed = bytearray(lzma.compress(payload, format=lzma.FORMAT_ALONE, filters=FILTERS))
     declared = struct.unpack_from('<Q', packed, 5)[0]
@@ -103,6 +99,23 @@ def probe_roundtrip():
         print(f'  probe: unpatched decode FAILED {error!r}')
 
 
+def lzma_library():
+    import _lzma
+    module = getattr(_lzma, '__file__', None)
+    print(f'_lzma {module or "<builtin>"}')
+    for candidate in [module, ctypes.util.find_library('lzma'), 'liblzma.so.5']:
+        if not candidate:
+            continue
+        try:
+            library = ctypes.CDLL(candidate)
+            library.lzma_version_string.restype = ctypes.c_char_p
+            print(f'liblzma {library.lzma_version_string().decode()} via {candidate}')
+            return
+        except Exception:  # noqa: BLE001
+            continue
+    print('liblzma version unknown')
+
+
 def main():
     parser = argparse.ArgumentParser()
     parser.add_argument('--fd', required=True)
@@ -110,15 +123,9 @@ def main():
     parser.add_argument('--loader-guid')
     args = parser.parse_args()
 
-    import _lzma
     print(f'python {platform.python_version()} {sys.executable}')
-    print(f'_lzma {_lzma.__file__}')
-    try:
-        library = ctypes.CDLL(_lzma.__file__)
-        library.lzma_version_string.restype = ctypes.c_char_p
-        print(f'liblzma {library.lzma_version_string().decode()}')
-    except Exception as error:  # noqa: BLE001
-        print(f'liblzma probe failed {error!r}')
+    print(f'builtin modules with lzma: {[n for n in sys.builtin_module_names if "lzma" in n]}')
+    lzma_library()
     probe_roundtrip()
 
     fd_path = pathlib.Path(args.fd)
@@ -143,6 +150,7 @@ def main():
         except Exception as error:  # noqa: BLE001
             print(f'  nested FV FAILED {error!r}')
 
+    pe = None
     if args.loader_guid:
         sys.path.insert(0, 'scripts')
         try:
@@ -156,7 +164,6 @@ def main():
             print(f'  loader_pe(source FD) ok bytes {len(pe)}')
         except Exception as error:  # noqa: BLE001
             print(f'  loader_pe(source FD) FAILED {error!r}')
-            pe = None
 
     if not args.template_dir:
         return
@@ -172,7 +179,7 @@ def main():
         try:
             shim, template_fw, tree, image = boot_template.parse_boot_image(data)
             print(f'  parse ok shim {len(shim)} firmware {len(template_fw)} '
-                  f'sha256 {hashlib.sha256(template_fw).hexdigest()} tree {len(tree)} image {image}')
+                  f'sha256 {hashlib.sha256(template_fw).hexdigest()} tree {len(tree)}')
         except Exception as error:  # noqa: BLE001
             print(f'  parse_boot_image FAILED {error!r}')
             continue
