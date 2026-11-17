@@ -302,6 +302,11 @@ ramdisk_max_bytes = 199229440
 ["os_overrides"."macos-27.3-26C5035r"."bootimg"]
 "max_image_bytes" = 202375168
 
+["os_overrides"."macos-27.3-26C5035r"."bootimg"."image"]
+# The qualified 218FDCCE transport firmware only publishes a plain FAT payload volume; the
+# UNXNFAT1 chunk container needs firmware built with that driver.
+"ramdisk_compression" = "none"
+
 ["os_overrides"."macos-27.3-26C5035r"."bootimg"."template"]
 "url" = "https://github.com/CrossDarwin/macOS-ForSheng/releases/download/sheng-recovery-218fdcce-preview1/sheng-recovery-218FDCCE-boot.img.xz"
 "sha256" = "8fed0304acdfac65421f8523d6be727311ee5f6f8826ac20736735de0e533124"
