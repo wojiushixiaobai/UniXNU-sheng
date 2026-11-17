@@ -156,6 +156,14 @@ jobs:
         id: build-images
         working-directory: device
         run: scripts/package.sh --os macos-27 --uefi ../uefi-sheng
+      - name: Diagnose firmware volume
+        if: failure()
+        working-directory: UniXNU
+        run: |
+          python3 ../device/scripts/analyze-firmware-volume.py \
+            --fd ../uefi-sheng/Build/shengPkg/DEBUG_CLANGPDB/FV/SILICIUM_UEFI.fd \
+            --template-dir out/downloads \
+            --loader-guid 1b64af87-8415-4b57-9b16-680d70913b9f
       - name: Upload firmware diagnostics
         if: failure()
         uses: actions/upload-artifact@v4
