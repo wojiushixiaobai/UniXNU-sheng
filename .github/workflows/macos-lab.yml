@@ -156,6 +156,17 @@ jobs:
         id: build-images
         working-directory: device
         run: scripts/package.sh --os macos-27 --uefi ../uefi-sheng
+      - name: Upload firmware diagnostics
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: firmware-diagnostics
+          if-no-files-found: warn
+          path: |
+            uefi-sheng/Build/**/FV/SILICIUM_UEFI.fd
+            uefi-sheng/Build/**/FV/SILICIUM_UEFI.fd-bootshim
+            UniXNU/out/sheng/*/*/logs/*.log
+          retention-days: 3
       - name: Publish shader inventory
         if: always()
         uses: actions/upload-artifact@v4
