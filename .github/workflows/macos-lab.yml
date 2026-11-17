@@ -152,6 +152,8 @@ jobs:
           else
             python3 ../device/scripts/prepare-macos-install.py --reuse-policies
           fi
+      - name: Relax the firmware volume decoder
+        run: python3 device/scripts/patch_boot_template_lzma.py UniXNU/scripts/unixnu/boot_template.py
       - name: Build images
         id: build-images
         working-directory: device
