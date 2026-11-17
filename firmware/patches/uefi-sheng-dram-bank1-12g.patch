@@ -1,0 +1,18 @@
+diff --git a/Platforms/Xiaomi/shengPkg/Library/MemoryMapLib/MemoryMapLib.c b/Platforms/Xiaomi/shengPkg/Library/MemoryMapLib/MemoryMapLib.c
+index 8ace77b3..b4f94184 100644
+--- a/Platforms/Xiaomi/shengPkg/Library/MemoryMapLib/MemoryMapLib.c
++++ b/Platforms/Xiaomi/shengPkg/Library/MemoryMapLib/MemoryMapLib.c
+@@ -64,9 +64,10 @@ STATIC EFI_MEMORY_REGION_DESCRIPTOR gMemoryDescriptor[] = {
+   // 0x880000000 + 1 GiB and 0x8C0000000 + 5 GiB, category SDRAM). DxeCore got a synchronous external abort
+   // clearing memory at 0x8BB300000, so the top of the first entry (to 0x8C0000000) is not given to UEFI.
+   {"DRAM bank 1 low", 0x880000000, 0x3B300000, AddMem, SYS_MEM, SYS_MEM_CAP, Conv, WRITE_BACK_XN},
+-  // Full five-GiB extent reported by the hardware SMEM partition table.
+-  // First four GiB reached userland; the added last GiB needs hardware validation.
+-  {"DRAM bank 1 high", 0x8C0000000, 0x140000000, AddMem, SYS_MEM, SYS_MEM_CAP, Conv, WRITE_BACK_XN},
++  // The 12 GiB board carries a ten-GiB bank 1 (0x880000000 + 1 GiB, 0x8C0000000 + 9 GiB);
++  // the 8 GiB unit reported five GiB for the second entry. ShengPrepareMemoryMap's corrections
++  // stay qualified for the 8 GiB layout, so a 12 GiB unit runs on this table as it stands.
++  {"DRAM bank 1 high", 0x8C0000000, 0x240000000, AddMem, SYS_MEM, SYS_MEM_CAP, Conv, WRITE_BACK_XN},
+   {"IMEM Base", 0x14680000, 0x0002A000, NoHob, MMAP_IO, INITIALIZED, Conv, NS_DEVICE},
+   {"IMEM Cookie Base", 0x146AA000, 0x00016000, AddDev, MMAP_IO, INITIALIZED, Conv, NS_DEVICE},
+   {"IPC_ROUTER_TOP", 0x00400000, 0x00100000, AddDev, MMAP_IO, UNCACHEABLE, MmIO, NS_DEVICE},

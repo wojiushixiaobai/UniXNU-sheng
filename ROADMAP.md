@@ -5,10 +5,13 @@ stays device configuration only; phases below that need upstream changes are
 marked. Target: macOS 27.3 (26C5035r) on the 12 GiB sheng, with a self-built
 uefi-sheng firmware and an ADT window sized to the board's DRAM banks.
 
-Status on 2026-11-18: boot transport qualified, userdata root image prebuilt
-and flashed, desktop reached. 6 GiB ADT window runs; 8 GiB hangs in the kernel
-bootstrap page tables (patch pending CI); firmware mapper now describes DRAM
-bank 1 up to 9 GiB.
+Status on 2026-11-18: boot transport qualified, self-built firmware and the
+rebuilt kernel in place, desktop reached on a userdata root image flashed from
+the lab artifact. 4, 6 and 8 GiB ADT windows run; the 8 GiB window needs the
+40-page bootstrap pool (device patch 156, CI run 44189136929, kernel
+`14531eac`). A 9 GiB window and a 9.9 GiB hole-spanning window abort before
+any kernel console output. Current working configuration: 8 GiB window on
+firmware FV `bc206ce1`. Record: `reports/macos27-sheng-12g-memory.md`.
 
 Non-goals:
 
@@ -26,36 +29,48 @@ Non-goals:
 - Self-built uefi-sheng firmware adds DRAM bank 1 (`0x880000000`), first with
   5 GiB, then 9 GiB for the 12 GiB board.
 - 4 GiB and then 6 GiB ADT windows reach the desktop.
-- Kernel `BOOTSTRAP_TABLE_SIZE` sized for 6 GiB spans blocks every larger window.
+- The kernel `BOOTSTRAP_TABLE_SIZE` sized for 6 GiB spans blocked every larger
+  window until the 40-page bootstrap pool patch (device patch 156) was added.
 
 ## Phase 1: full usable memory
 
-Goal: raise the managed window to the largest single bank-1 run and reclaim the
-memory outside it, so macOS reports about 9.5 to 10.5 GiB instead of 6 GiB.
+Goal: raise the managed window to the largest single bank-1 span and reclaim the
+memory outside it, so macOS reports about 9.5 to 10.5 GiB instead of 8 GiB.
 
-Work items:
+Done:
 
-1. Kernel: raise `BOOTSTRAP_TABLE_SIZE` from 16 to 40 pages
-   (`patches/xnu-12377/zzz-macos-bootstrap-capacity-18g.patch`, commit 111cade).
-   Verify with an 8 GiB window first, then 9 GiB.
-2. Window: test `owned_memory_size` 8 GiB (`0x200000000`, the ADT generator
-   limit) and then a hole-spanning 9.9 GiB window that uses
-   `owned_memory_excluded_ranges` for the 77 MiB inaccessible top of bank 1.
-3. Firmware: keep the 9 GiB bank-1 entry in the fork's uefi-sheng; evaluate
-   reclaiming the 256 MiB `Kernel` reservation (stock Android window) and the
-   `Display Demura` gap, then re-run the memory-map check.
-4. Adoption: tune `owned_memory_outside_ranges` and the runtime probe so the
+1. Kernel: `BOOTSTRAP_TABLE_SIZE` 16 to 40 pages
+   (`patches/xnu-12377/zzz-macos-bootstrap-capacity-18g.patch`, device patch
+   156, commit 111cade). CI run 44189136929 rebuilt the kernel
+   (`14531eac`) and the 8 GiB window reaches the desktop.
+2. Firmware: the 9 GiB bank-1 entry lives in the local uefi-sheng checkout and
+   is captured as `firmware/patches/uefi-sheng-dram-bank1-12g.patch`.
+3. Window: an 8 GiB ADT window (`0x200000000`) boots. The first Boot after a
+   flash can fail once and succeed on retry; record whether that follows the
+   UEFI allocation order.
+
+Remaining:
+
+4. Diagnostics: a 9 GiB window returns to fastboot and a 9.9 GiB
+   hole-spanning window shows a flash with no text, so DarwinBoot must keep its
+   failure state on screen (window start, usable bytes, free runs) or clip the
+   request to the largest free run before another hardware attempt.
+5. Firmware: evaluate reclaiming the 256 MiB `Kernel` reservation (stock
+   Android window) and the `Display Demura` gap, then re-run the memory-map
+   check; that adds usable runs below the window.
+6. Adoption: tune `owned_memory_outside_ranges` and the runtime probe so the
    low bank (about 0.86 GiB free) and bank-1 low (947 MiB) are adopted.
-5. Kernel VA: confirm the prelinker and pmap handle an 8 to 10 GiB managed span
-   with native 4 KiB pages (page array, zone budget, bootstrap mappings).
+7. Verify swap/compressor on the 8 GiB desktop: dynamic swap on the Data
+   volume (`/private/var/vm/swapfile*`), `sysctl vm.swapusage`, and a short
+   memory-pressure run.
 
-Acceptance: About reports at least 9 GiB; no early-boot hang; 30 minutes of
-memory pressure (compressor + swap) stays responsive; `sysctl hw.memsize`
-matches the window plus adopted pages.
+Acceptance: 8 GiB reached and verified on hardware; the next step (9 to 9.9 GiB)
+needs the diagnostics above; 30 minutes of memory pressure stays responsive;
+`sysctl hw.memsize` matches the window plus adopted pages.
 
 Risks: the 77 MiB hole and firmware carveouts cap the total below 12 GiB; a
-window larger than one free run needs the excluded-range path; upstream may
-reject the larger bootstrap table.
+window spanning the hole needs the excluded-range path; upstream may reject the
+larger bootstrap table.
 
 ## Phase 2: identity, persistent NVRAM and boot entries
 
