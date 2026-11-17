@@ -8,9 +8,9 @@ on:
         type: string
         default: main
       root_storage:
-        description: Build the userdata root image
+        description: "Also build the userdata root image (13 GiB artifact; downloads the ~15 GiB macOS disk images the first time)"
         type: boolean
-        default: true
+        default: false
       export_build_inputs:
         description: Export cached XNU objects and the SDK for a local build
         type: boolean
@@ -21,7 +21,7 @@ on:
         default: sheng-macos27-kernel-v1-d509f7e4757a27f5-43684813634
 
 permissions:
-  contents: read
+  contents: write
 
 concurrency:
   group: macos-lab-${{ github.ref }}-${{ inputs.export_build_inputs && 'inputs' || 'images' }}
@@ -42,6 +42,7 @@ jobs:
       UNIXNU_IPSW_JOBS: 16
       HOMEBREW_NO_AUTO_UPDATE: 1
       GITHUB_TOKEN: ${{ github.token }}
+      GH_TOKEN: ${{ github.token }}
       UNIXNU_UNIQUE_CHIP_ID: ${{ secrets.UNIXNU_UNIQUE_CHIP_ID }}
       UNIXNU_LAB_PASSWORD: ${{ secrets.UNIXNU_LAB_PASSWORD }}
     steps:
@@ -83,6 +84,18 @@ jobs:
             UniXNU/out/sheng/macos-27.3-26C5035r/sheng_macos/runtime/data.dbr
             device/drivers/Ath12kWifi/deps
             device/.cache/firmware
+      - name: Restore the small IPSW members
+        id: ipsw-cache
+        uses: actions/cache/restore@v4
+        with:
+          key: sheng-macos27-ipsw-v1-26C5035r
+          path: |
+            UniXNU/out/ipsw/26C5035r
+            UniXNU/out/downloads
+      - name: Restore the macOS IPSW media
+        if: inputs.root_storage
+        continue-on-error: true
+        run: device/scripts/cache-macos-ipsw.sh restore 26C5035r UniXNU/out/ipsw/26C5035r
       - name: Refresh pinned translator checkout
         run: |
           python3 - <<'PYTHON'
@@ -202,25 +215,58 @@ jobs:
               objects += ['--object', f'{name}.vroot={ctx.tree}/build/verified-root-{name}/hashes.bin']
           subprocess.run(['./unixnu', 'build', 'userdata', '--os', 'macos-27', *objects], check=True)
           PY
-      - name: Stage device artifacts
-        env:
-          BUILD_ROOT_STORAGE: ${{ inputs.root_storage }}
+      - name: Stage boot image
         run: |
-          mkdir artifacts
+          mkdir -p artifacts/boot
           target=UniXNU/out/sheng/macos-27.3-26C5035r/sheng_macos
-          cp "$target/boot/boot.img" "$target/payload/payload.img" "$target/kernel/kernel.macho" "$target/package.manifest.json" artifacts/
-          cp "$target/runtime/data.dbr" artifacts/
-          cp "$target/tree/build/prime-list.txt" "$target/tree/build/prime-list.json" artifacts/
-          if [ "$BUILD_ROOT_STORAGE" = true ]; then
-            cp "$target/userdata/userdata-root.json" artifacts/
-            zstd -T0 -3 --sparse "$target/userdata/userdata-root.img" -o artifacts/userdata-root.img.zst
-          fi
+          cp "$target/boot/boot.img" artifacts/boot/
+          cp "$target/package.manifest.json" artifacts/boot/
+      - name: Stage payload and kernel
+        run: |
+          mkdir -p artifacts/payload
+          target=UniXNU/out/sheng/macos-27.3-26C5035r/sheng_macos
+          cp "$target/payload/payload.img" "$target/kernel/kernel.macho" artifacts/payload/
+          cp "$target/package.manifest.json" "$target/runtime/data.dbr" artifacts/payload/
+          cp "$target/tree/build/prime-list.txt" "$target/tree/build/prime-list.json" artifacts/payload/
+      - name: Stage userdata root image
+        if: inputs.root_storage
+        run: |
+          mkdir -p artifacts/userdata
+          target=UniXNU/out/sheng/macos-27.3-26C5035r/sheng_macos
+          cp "$target/userdata/userdata-root.json" artifacts/userdata/
+          zstd -T0 -3 --sparse "$target/userdata/userdata-root.img" -o artifacts/userdata/userdata-root.img.zst
       - uses: actions/upload-artifact@v4
         with:
-          name: sheng-macos-27
-          path: artifacts/
+          name: sheng-macos-27-boot
+          path: artifacts/boot/
+          retention-days: 7
+      - uses: actions/upload-artifact@v4
+        with:
+          name: sheng-macos-27-payload
+          path: artifacts/payload/
+          retention-days: 7
+      - uses: actions/upload-artifact@v4
+        if: inputs.root_storage
+        with:
+          name: sheng-macos-27-userdata
+          path: artifacts/userdata/
           compression-level: 0
           retention-days: 1
+      - name: Cache the macOS IPSW media
+        if: always() && inputs.root_storage
+        continue-on-error: true
+        run: device/scripts/cache-macos-ipsw.sh save 26C5035r UniXNU/out/ipsw/26C5035r
+      - name: Keep the small IPSW members only
+        if: always() && steps.ipsw-cache.outputs.cache-hit != 'true'
+        run: find UniXNU/out/ipsw -type f -size +256M -delete
+      - name: Save the small IPSW members
+        if: always() && steps.ipsw-cache.outputs.cache-hit != 'true'
+        uses: actions/cache/save@v4
+        with:
+          key: sheng-macos27-ipsw-v1-26C5035r
+          path: |
+            UniXNU/out/ipsw/26C5035r
+            UniXNU/out/downloads
       - uses: actions/upload-artifact@v4
         if: failure()
         with:
