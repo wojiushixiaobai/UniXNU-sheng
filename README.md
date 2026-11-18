@@ -19,6 +19,7 @@ profile is the one under active maintenance).
 | `proprietary-files.txt` | Firmware input paths |
 | `package/` | Device policy, display, input, and diagnostics |
 | `scripts/` | Device build and inspection tools |
+| `ROADMAP.md` | Fork plan: memory, identity, recovery and install phases |
 
 `Adreno740` and `AdrenoMetal` provide the GPU implementation. Shared GMU,
 command database, and GPU SMMU operations are in the SoC repository's
