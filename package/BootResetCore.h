@@ -21,7 +21,7 @@ enum {
   BR_OP_EXT_WRITEL = 0, BR_OP_EXT_READL = 1,
   BR_STATUS_DONE = 1u << 0, BR_STATUS_ERRORS = 0xeu,      // bits 1..3: failed, denied, dropped
   BR_SDAM_PPID = 0x071, BR_REBOOT_CELL = 0x48,
-  BR_REBOOT_MASK = 0xfe, BR_REBOOT_SHIFT = 1, BR_REBOOT_BOOTLOADER = 2,
+  BR_REBOOT_MASK = 0xfe, BR_REBOOT_SHIFT = 1, BR_REBOOT_NORMAL = 0, BR_REBOOT_BOOTLOADER = 2,
   BR_POLLS = 100000,
   BR_WDT_CONTROL = 0x86000005u, BR_WDT_STATUS = 0x86000006u,
   BR_WDT_PING = 0x86000007u, BR_WDT_SET_TIME = 0x86000008u,
@@ -72,16 +72,22 @@ static inline int br_write8(volatile uint32_t *chn, int apid, uint8_t byte_addr,
   ch[BR_CMD / 4] = br_cmd(BR_OP_EXT_WRITEL, byte_addr, 0);
   return br_wait(ch);
 }
-// Sets the reboot-reason cell to "bootloader", leaving bit 0, and reads it back. 0 = written and verified.
-static inline int br_set_bootloader(volatile uint32_t *obs, volatile uint32_t *chn, const struct br_arbiter *a, int apid, uint8_t *before,
-                                    uint8_t *after) {
+// Sets the reboot-reason cell to reason (bits 7:1; BR_REBOOT_NORMAL = 0 leaves no special reason), bit 0 preserved,
+// and reads it back. 0 = written and verified.
+static inline int br_set_reboot_reason(volatile uint32_t *obs, volatile uint32_t *chn, const struct br_arbiter *a, int apid,
+                                       uint8_t reason, uint8_t *before, uint8_t *after) {
   int rc = br_read8(obs, a, apid, BR_REBOOT_CELL, before);
   if (rc) return 10 + rc;
-  uint8_t next = (uint8_t)((*before & ~BR_REBOOT_MASK) | (BR_REBOOT_BOOTLOADER << BR_REBOOT_SHIFT));
+  uint8_t next = (uint8_t)((*before & ~BR_REBOOT_MASK) | (uint8_t)((reason << BR_REBOOT_SHIFT) & BR_REBOOT_MASK));
   rc = br_write8(chn, apid, BR_REBOOT_CELL, next);
   if (rc) return 20 + rc;
   rc = br_read8(obs, a, apid, BR_REBOOT_CELL, after);
   if (rc) return 30 + rc;
   return *after == next ? 0 : 40;
+}
+// The bootloader reason sends the next reset to the bootloader's fastboot interface instead of this firmware.
+static inline int br_set_bootloader(volatile uint32_t *obs, volatile uint32_t *chn, const struct br_arbiter *a, int apid, uint8_t *before,
+                                    uint8_t *after) {
+  return br_set_reboot_reason(obs, chn, a, apid, BR_REBOOT_BOOTLOADER, before, after);
 }
 #endif
