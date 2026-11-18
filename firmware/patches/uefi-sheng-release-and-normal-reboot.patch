@@ -19,6 +19,20 @@ index 6dd61642..10d24e8c 100644
    } else if (Mark == 0) {
      Mark = -1;
    }
+diff --git a/Platforms/Xiaomi/shengPkg/sheng.dsc b/Platforms/Xiaomi/shengPkg/sheng.dsc
+index ad4716f0..bf0c8786 100644
+--- a/Platforms/Xiaomi/shengPkg/sheng.dsc
++++ b/Platforms/Xiaomi/shengPkg/sheng.dsc
+@@ -97,6 +97,9 @@
+ !endif
+ 
+ [LibraryClasses]
++  # Mu device-state banners (green development build / blue source debug / violet manufacturing
++  # mode) are developer indicators for reference boards; they are the stripes over the boot menu.
++  DisplayDeviceStateLib|MsGraphicsPkg/Library/DisplayDeviceStateLibNull/DisplayDeviceStateLibNull.inf
+ !if $(SHENG_BOOT_GUARD) == 1
+   PlatformSecLib|shengPkg/Library/ShengPlatformSecLib/ShengPlatformSecLib.inf
+ !endif
 diff --git a/Silicon/Silicium/SiliciumPkg/Sec/Sec.c b/Silicon/Silicium/SiliciumPkg/Sec/Sec.c
 index 1b75d598..4ba2421c 100644
 --- a/Silicon/Silicium/SiliciumPkg/Sec/Sec.c
