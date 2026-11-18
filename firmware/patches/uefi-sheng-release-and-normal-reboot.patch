@@ -20,7 +20,7 @@ index 6dd61642..10d24e8c 100644
      Mark = -1;
    }
 diff --git a/Silicon/Silicium/SiliciumPkg/Sec/Sec.c b/Silicon/Silicium/SiliciumPkg/Sec/Sec.c
-index 1b75d598..3b459284 100644
+index 1b75d598..4ba2421c 100644
 --- a/Silicon/Silicium/SiliciumPkg/Sec/Sec.c
 +++ b/Silicon/Silicium/SiliciumPkg/Sec/Sec.c
 @@ -26,7 +26,10 @@ extern UINT64  gSecEntryArg0;
@@ -34,7 +34,34 @@ index 1b75d598..3b459284 100644
  extern RETURN_STATUS EFIAPI ExtractGuidedSectionLibConstructor (VOID);
  extern RETURN_STATUS EFIAPI ArmMmuBaseLibConstructor (VOID);
  extern RETURN_STATUS EFIAPI LzmaDecompressLibConstructor (VOID);
-@@ -181,7 +184,9 @@ SecMain (VOID)
+@@ -54,7 +57,6 @@ CheckHobList (VOID)
+   DEBUG ((EFI_D_WARN, "SEC: HOB list ok, %u entries\n", (UINT32)Count));
+ }
+ 
+-#ifndef MDEPKG_NDEBUG
+ STATIC
+ VOID
+ ClearFrameBuffer (VOID)
+@@ -71,6 +73,7 @@ ClearFrameBuffer (VOID)
+   }
+ }
+ 
++#ifndef MDEPKG_NDEBUG
+ STATIC
+ VOID
+ PrintFirmwareVersion (VOID)
+@@ -133,6 +136,10 @@ SecMain (VOID)
+   // Do Platform Specific Initialization
+   PlatformInitialize ();
+ 
++  // The panel may still scan out the buffer the previous stage left. Clear the reserved frame buffer in every
++  // build so a region the console never paints (the panel's top rows) is not DRAM residue.
++  ClearFrameBuffer ();
++
+ #ifndef MDEPKG_NDEBUG
+   // Initialize Serial Port
+   Status = SerialPortInitialize ();
+@@ -181,7 +188,9 @@ SecMain (VOID)
  
    // Run Library Cconstructors
    DEBUG ((EFI_D_WARN, "SEC: constructor debug\n"));
