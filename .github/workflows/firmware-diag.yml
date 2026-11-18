@@ -1,0 +1,137 @@
+name: sheng firmware diagnostic
+
+# Narrow reproduction of the lab's bootimg failure: build the firmware volume, replay the
+# qualified-template boot image, then dump the compression facts. No kernel or payload build.
+
+on:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: firmware-diag-${{ github.run_id }}
+  cancel-in-progress: false
+
+jobs:
+  firmware:
+    runs-on: macos-26
+    timeout-minutes: 120
+    env:
+      HOMEBREW_NO_AUTO_UPDATE: 1
+      GITHUB_TOKEN: ${{ github.token }}
+      UNIXNU_UNIQUE_CHIP_ID: ${{ secrets.UNIXNU_UNIQUE_CHIP_ID }}
+    steps:
+      - name: Check out device sources
+        uses: actions/checkout@v4
+        with:
+          path: device
+          submodules: recursive
+      - name: Check out core sources
+        uses: actions/checkout@v4
+        with:
+          repository: UniXNU/UniXNU
+          ref: main
+          path: UniXNU
+          submodules: recursive
+      - name: Check out firmware sources
+        uses: actions/checkout@v4
+        with:
+          repository: UniXNU/uefi-sheng
+          ref: 8156d2e54a9f57818dc8b415a1a7dc28ad9ba4be
+          path: uefi-sheng
+          submodules: false
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.14'
+      - name: Restore build inputs
+        uses: actions/cache/restore@v4
+        with:
+          key: sheng-macos27-build-v1-${{ runner.os }}-${{ github.run_id }}
+          restore-keys: sheng-macos27-build-v1-${{ runner.os }}-
+          path: |
+            UniXNU/out/feeds
+            device/.cache/firmware
+      - name: Install build tools
+        run: |
+          brew install dtc llvm@22 lld@22 cmake mtools ninja bison pkgconf
+          {
+            echo "$HOME/.cargo/bin"
+            echo "/opt/homebrew/opt/bison/bin"
+          } >> "$GITHUB_PATH"
+          python3 - <<'PYTHON'
+          from pathlib import Path
+          toolchain = Path('uefi-toolchain').resolve()
+          toolchain.mkdir()
+          for name in ('clang', 'llvm-lib', 'llvm-rc', 'lld-link'):
+              package = 'lld@22' if name == 'lld-link' else 'llvm@22'
+              (toolchain / name).symlink_to(Path('/opt/homebrew/opt') / package / 'bin' / name)
+          with Path(__import__('os').environ['GITHUB_ENV']).open('a') as output:
+              output.write('CLANG_BIN=' + str(toolchain) + '/\n')
+          PYTHON
+      - name: Relax the firmware volume decoder
+        run: python3 device/scripts/patch_boot_template_lzma.py UniXNU/scripts/unixnu/boot_template.py
+      - name: Prepare installation
+        working-directory: UniXNU
+        run: |
+          ./unixnu defconfig sheng_macos_defconfig -D ../device --os macos-27
+          ./unixnu fetch --os macos-27
+      - name: Build firmware
+        working-directory: UniXNU
+        run: ./unixnu build firmware -D ../device --os macos-27 --uefi ../uefi-sheng
+      - name: Replay the qualified-template boot image
+        if: always()
+        working-directory: UniXNU
+        continue-on-error: true
+        run: |
+          ./unixnu bootimg -D ../device --os macos-27 --uefi ../uefi-sheng --ramdisk none \
+            --fd ../uefi-sheng/Build/shengPkg/DEBUG_CLANGPDB/FV/SILICIUM_UEFI.fd
+      - name: Diagnose firmware volume
+        if: always()
+        working-directory: UniXNU
+        continue-on-error: true
+        run: |
+          python3 ../device/scripts/analyze-firmware-volume.py \
+            --fd ../uefi-sheng/Build/shengPkg/DEBUG_CLANGPDB/FV/SILICIUM_UEFI.fd \
+            --template-dir out/downloads \
+            --loader-guid 1b64af87-8415-4b57-9b16-680d70913b9f
+      - name: Cross-check the section with the xz tool
+        if: always()
+        continue-on-error: true
+        run: |
+          python3 - <<'PY'
+          import pathlib, struct, uuid
+          path = pathlib.Path('uefi-sheng/Build/shengPkg/DEBUG_CLANGPDB/FV/SILICIUM_UEFI.fd')
+          if not path.is_file():
+              print('no firmware volume'); raise SystemExit(0)
+          fd = path.read_bytes()
+          size24 = lambda data, offset: int.from_bytes(data[offset:offset + 3], 'little')
+          align = lambda value, boundary: (value + boundary - 1) & -boundary
+          length = struct.unpack_from('<Q', fd, 32)[0]
+          header = struct.unpack_from('<H', fd, 48)[0]
+          at = header
+          while at + 24 <= length and fd[at:at + 24] != b'\xff' * 24:
+              size = size24(fd, at + 20)
+              if fd[at + 18] == 0x0b:
+                  section = fd[at + 24:at + size]
+                  if section[3] == 2 and str(uuid.UUID(bytes_le=section[4:20])) == 'ee4e5898-3914-4259-9d6e-dc7bd79403cf':
+                      data_at = struct.unpack_from('<H', section, 20)[0]
+                      stream = section[data_at:size24(section, 0)]
+                      pathlib.Path('/tmp/section.lzma').write_bytes(stream)
+                      print(f'section written {len(stream)} head {stream[:13].hex()}')
+                      break
+              at = align(at + size, 8)
+          PY
+          xz --format=lzma -dc /tmp/section.lzma | wc -c
+          echo "xz rc=$?"
+      - name: Upload firmware diagnostics
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: firmware-diagnostics
+          if-no-files-found: warn
+          path: |
+            uefi-sheng/Build/**/FV/SILICIUM_UEFI.fd
+            UniXNU/out/downloads/boot-template-*.img.xz
+            UniXNU/out/sheng/*/*/logs/*.log
+          retention-days: 3
