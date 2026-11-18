@@ -17,20 +17,6 @@ from unixnu.ipsw import Ipsw
 from unixnu.userdata import disk_blocks, image_size
 
 
-def allow_empty_account_password():
-    """Let the core account reader accept an empty password; the seed tool hashes whatever string it is given."""
-    module = ROOT / 'scripts' / 'macos_account.py'
-    text = module.read_text()
-    relaxed = "    if not separator or '\\0' in password:"
-    guarded = "    if not separator or not password or '\\0' in password:"
-    if relaxed in text:
-        return
-    if guarded not in text:
-        raise SystemExit(f'{module}: cannot find the account password check to relax')
-    module.write_text(text.replace(guarded, relaxed))
-    print('macOS administrator: empty password allowed')
-
-
 def main():
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument('--reuse-policies', action='store_true', help='use the selected profile\'s signed root headers and public key')
@@ -49,14 +35,13 @@ def main():
     if ctx.args.data_ramdisk and not seed.is_file():
         raise SystemExit(f'Preserved Data seed not found: {seed}')
     if not seed.exists():
-        allow_empty_account_password()
-        # No build credential: the administrator has an empty password, so a fresh Data store logs in without one
-        # (auto-login stores that empty password in kcpassword). Set a real password in System Settings after boot.
+        # No build credential: the seed sets this documented local password, and auto-login stores it in kcpassword.
+        # macOS authorization (System Settings unlock, administrator prompts) rejects an empty password.
         subprocess.run(['sudo', sys.executable, str(ROOT / 'scripts/make-macos-data-seed.py'),
                         str(source.disk_image('OS')), str(seed), '--gib',
                         str(ctx.board['payload']['runtime']['data_gib']), '--skip-setup',
                         '--user-stdin', '--auto-login'],
-                       input=json.dumps({'name': 'unixnu', 'password': ''}).encode(), check=True)
+                       input=json.dumps({'name': 'unixnu', 'password': 'unixnu'}).encode(), check=True)
         subprocess.run(['sudo', 'chown', str(os.getuid()), str(seed)], check=True)
     policies = ctx.device / 'scripts/policies' / ctx.work.parent.name
     if args.reuse_policies:
