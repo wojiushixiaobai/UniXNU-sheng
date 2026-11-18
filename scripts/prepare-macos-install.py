@@ -1,6 +1,7 @@
 #!/usr/bin/env python3
 """Prepare a fresh macOS Data seed and signed root windows for sheng packaging."""
 import argparse
+import hashlib
 import json
 import os
 from pathlib import Path
@@ -17,6 +18,9 @@ from unixnu.ipsw import Ipsw
 from unixnu.userdata import disk_blocks, image_size
 
 
+ADMIN_PASSWORD = 'unixnu'   # known local password; macOS authorization rejects an empty one
+
+
 def main():
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument('--reuse-policies', action='store_true', help='use the selected profile\'s signed root headers and public key')
@@ -31,9 +35,18 @@ def main():
     source = Ipsw(ctx)
     runtime = ctx.work / 'runtime'
     runtime.mkdir(parents=True, exist_ok=True)
-    seed = Path(ctx.args.data_ramdisk).expanduser().resolve() if ctx.args.data_ramdisk else runtime / 'data.dbr'
-    if ctx.args.data_ramdisk and not seed.is_file():
-        raise SystemExit(f'Preserved Data seed not found: {seed}')
+    if ctx.args.data_ramdisk:
+        seed = Path(ctx.args.data_ramdisk).expanduser().resolve()
+        if not seed.is_file():
+            raise SystemExit(f'Preserved Data seed not found: {seed}')
+    else:
+        seed = runtime / 'data.dbr'
+        marker = runtime / 'data-seed.json'
+        password_sha256 = hashlib.sha256(ADMIN_PASSWORD.encode()).hexdigest()
+        state = json.loads(marker.read_text()) if marker.is_file() else {}
+        if state.get('administrator_password_sha256') != password_sha256:
+            # A restored build input seed was made with another credential (actions/cache); rebuild it.
+            seed.unlink(missing_ok=True)
     if not seed.exists():
         # No build credential: the seed sets this documented local password, and auto-login stores it in kcpassword.
         # macOS authorization (System Settings unlock, administrator prompts) rejects an empty password.
@@ -41,8 +54,11 @@ def main():
                         str(source.disk_image('OS')), str(seed), '--gib',
                         str(ctx.board['payload']['runtime']['data_gib']), '--skip-setup',
                         '--user-stdin', '--auto-login'],
-                       input=json.dumps({'name': 'unixnu', 'password': 'unixnu'}).encode(), check=True)
+                       input=json.dumps({'name': 'unixnu', 'password': ADMIN_PASSWORD}).encode(), check=True)
         subprocess.run(['sudo', 'chown', str(os.getuid()), str(seed)], check=True)
+        if not ctx.args.data_ramdisk:
+            marker.write_text(json.dumps({'administrator_password_sha256': password_sha256,
+                                          'tool': 'make-macos-data-seed.py'}) + '\n')
     policies = ctx.device / 'scripts/policies' / ctx.work.parent.name
     if args.reuse_policies:
         if any(not (policies / window['name'] / name).is_file()
