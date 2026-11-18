@@ -3141,7 +3141,9 @@ void boot_log_panic_record(const char *format, va_list *args, unsigned long call
 }
 
 // EARLY_BOOT takes over the firmware watchdog before memory adoption and IOKit startup.
-// autoreset sets a ping deadline; the firmware's bootloader reboot reason persists across the handoff.
+// autoreset sets a ping deadline and, for an unattended run, marks the bootloader reboot reason so every later reset
+// returns to fastboot. uefi-watchdog alone (a normal desktop boot) only adopts the armed watchdog: the firmware wrote
+// the normal reboot reason, so a restart or shutdown boots again instead of entering fastboot.
 static void boot_reset_arm(void) {
   static int armed;
   uint32_t autoreset = 0, inherited = 0;
@@ -3151,7 +3153,7 @@ static void boot_reset_arm(void) {
   PE_parse_boot_argn("uefi-watchdog", &inherited, sizeof inherited);
   if ((autoreset || inherited) && &boot_reset_probe &&
       boot_reset_probe(boot_log_reset_probe_text, sizeof boot_log_reset_probe_text) == 0) {
-    if (&boot_reset_mark_bootloader) boot_reset_mark_bootloader(boot_log_reset_mark, sizeof boot_log_reset_mark);
+    if (autoreset && &boot_reset_mark_bootloader) boot_reset_mark_bootloader(boot_log_reset_mark, sizeof boot_log_reset_mark);
     if (&boot_reset_watchdog) boot_reset_watchdog(autoreset ? autoreset + 30 : 0, boot_log_reset_watchdog, sizeof boot_log_reset_watchdog);
   }
 }
