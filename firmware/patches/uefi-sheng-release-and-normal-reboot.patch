@@ -1,3 +1,46 @@
+diff --git a/Platforms/Xiaomi/shengPkg/Drivers/ShengBootGuardDxe/ShengBootGuardDxe.c b/Platforms/Xiaomi/shengPkg/Drivers/ShengBootGuardDxe/ShengBootGuardDxe.c
+index 1e3543d3..ef5cc796 100644
+--- a/Platforms/Xiaomi/shengPkg/Drivers/ShengBootGuardDxe/ShengBootGuardDxe.c
++++ b/Platforms/Xiaomi/shengPkg/Drivers/ShengBootGuardDxe/ShengBootGuardDxe.c
+@@ -6,16 +6,16 @@
+ #include "../../Include/ShengBootGuard.h"
+ 
+ STATIC EFI_EVENT PingEvent;
+-STATIC UINT64 Deadline;
+ 
+ STATIC VOID EFIAPI
+ PingWatchdog (EFI_EVENT Event, VOID *Context)
+ {
+-  if (ShengBootTicks () < Deadline) {
+-    ShengWatchdogCall (BR_WDT_PING, 0, 0);
+-  } else {
+-    gBS->SetTimer (PingEvent, TimerCancel, 0);
+-  }
++  //
++  // Keep the armed Gunyah watchdog fed while this firmware runs. The boot menu waits for input
++  // indefinitely, so a firmware deadline here would turn an idle menu into a watchdog reset; a
++  // firmware hang still stops the pings, and ExitBootServices hands the armed timer to the kernel.
++  //
++  ShengWatchdogCall (BR_WDT_PING, 0, 0);
+ }
+ 
+ STATIC VOID EFIAPI
+@@ -31,7 +31,6 @@ ShengBootGuardDxeEntry (EFI_HANDLE ImageHandle, EFI_SYSTEM_TABLE *SystemTable)
+   EFI_EVENT ExitEvent;
+   UINT64 Frequency = ShengBootFrequency ();
+   if (Frequency == 0 || ShengWatchdogCall (BR_WDT_STATUS, 0, 0) != 0) return EFI_UNSUPPORTED;
+-  Deadline = ShengBootTicks () + Frequency * 180;
+   EFI_STATUS Status = gBS->CreateEvent (EVT_TIMER | EVT_NOTIFY_SIGNAL, TPL_CALLBACK,
+                                        PingWatchdog, NULL, &PingEvent);
+   if (EFI_ERROR (Status)) return Status;
+@@ -40,6 +39,6 @@ ShengBootGuardDxeEntry (EFI_HANDLE ImageHandle, EFI_SYSTEM_TABLE *SystemTable)
+   if (EFI_ERROR (Status)) { gBS->CloseEvent (PingEvent); return Status; }
+   ShengWatchdogCall (BR_WDT_PING, 0, 0);
+   Status = gBS->SetTimer (PingEvent, TimerPeriodic, 20000000);
+-  DEBUG ((DEBUG_ERROR, "Sheng guard: DXE ping=2s budget=180s status=%r\n", Status));
++  DEBUG ((DEBUG_ERROR, "Sheng guard: DXE ping=2s no deadline status=%r\n", Status));
+   return Status;
+ }
 diff --git a/Platforms/Xiaomi/shengPkg/Library/ShengPlatformSecLib/ShengPlatformSecLib.c b/Platforms/Xiaomi/shengPkg/Library/ShengPlatformSecLib/ShengPlatformSecLib.c
 index 6dd61642..10d24e8c 100644
 --- a/Platforms/Xiaomi/shengPkg/Library/ShengPlatformSecLib/ShengPlatformSecLib.c
