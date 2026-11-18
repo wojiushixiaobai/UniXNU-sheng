@@ -44,7 +44,6 @@ jobs:
       GITHUB_TOKEN: ${{ github.token }}
       GH_TOKEN: ${{ github.token }}
       UNIXNU_UNIQUE_CHIP_ID: ${{ secrets.UNIXNU_UNIQUE_CHIP_ID }}
-      UNIXNU_LAB_PASSWORD: ${{ secrets.UNIXNU_LAB_PASSWORD }}
     steps:
       - name: Check out device sources
         uses: actions/checkout@v4
