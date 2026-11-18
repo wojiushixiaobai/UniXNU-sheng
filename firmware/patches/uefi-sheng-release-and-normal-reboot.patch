@@ -1,0 +1,46 @@
+diff --git a/Platforms/Xiaomi/shengPkg/Library/ShengPlatformSecLib/ShengPlatformSecLib.c b/Platforms/Xiaomi/shengPkg/Library/ShengPlatformSecLib/ShengPlatformSecLib.c
+index 6dd61642..10d24e8c 100644
+--- a/Platforms/Xiaomi/shengPkg/Library/ShengPlatformSecLib/ShengPlatformSecLib.c
++++ b/Platforms/Xiaomi/shengPkg/Library/ShengPlatformSecLib/ShengPlatformSecLib.c
+@@ -17,10 +17,13 @@ PlatformInitialize (VOID)
+   struct br_found Found;
+   uint8_t Before = 0xff, After = 0xff;
+   INTN Mark = br_find (&Arbiter, &Found);
++  // Write the normal reboot reason, not "bootloader": the cell survives the handoff and the stock bootloader reads it at
++  // the next reset, so marking "bootloader" here sends every restart and shutdown to fastboot. The verified write still
++  // proves this EE controls the SDAM cell before the watchdog is armed; only an unattended kernel run marks fastboot.
+   if (Mark == 0 && Found.owner == Arbiter.ee) {
+-    Mark = br_set_bootloader ((volatile uint32_t *)(UINTN)0xc440000,
+-                             (volatile uint32_t *)(UINTN)0xc500000,
+-                             &Arbiter, Found.apid, &Before, &After);
++    Mark = br_set_reboot_reason ((volatile uint32_t *)(UINTN)0xc440000,
++                                 (volatile uint32_t *)(UINTN)0xc500000,
++                                 &Arbiter, Found.apid, BR_REBOOT_NORMAL, &Before, &After);
+   } else if (Mark == 0) {
+     Mark = -1;
+   }
+diff --git a/Silicon/Silicium/SiliciumPkg/Sec/Sec.c b/Silicon/Silicium/SiliciumPkg/Sec/Sec.c
+index 1b75d598..3b459284 100644
+--- a/Silicon/Silicium/SiliciumPkg/Sec/Sec.c
++++ b/Silicon/Silicium/SiliciumPkg/Sec/Sec.c
+@@ -26,7 +26,10 @@ extern UINT64  gSecEntryArg0;
+ // Helper.S: clean and invalidate every data cache level by set/way (see there).
+ extern VOID SecCleanInvalidateDataCacheAll (VOID);
+ 
++#ifndef MDEPKG_NDEBUG
++// RELEASE (MDEPKG_NDEBUG) maps DebugLib to BaseDebugLibNull, which has no constructor.
+ extern RETURN_STATUS EFIAPI BaseDebugLibSerialPortConstructor (VOID);
++#endif
+ extern RETURN_STATUS EFIAPI ExtractGuidedSectionLibConstructor (VOID);
+ extern RETURN_STATUS EFIAPI ArmMmuBaseLibConstructor (VOID);
+ extern RETURN_STATUS EFIAPI LzmaDecompressLibConstructor (VOID);
+@@ -181,7 +184,9 @@ SecMain (VOID)
+ 
+   // Run Library Cconstructors
+   DEBUG ((EFI_D_WARN, "SEC: constructor debug\n"));
++#ifndef MDEPKG_NDEBUG
+   BaseDebugLibSerialPortConstructor ();
++#endif
+   DEBUG ((EFI_D_WARN, "SEC: constructor guided-section\n"));
+   ExtractGuidedSectionLibConstructor ();
+   DEBUG ((EFI_D_WARN, "SEC: constructor mmu\n"));
